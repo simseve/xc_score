@@ -73,7 +73,7 @@ result = scorer.score_flight()
 The script can be run directly from the command line:
 
 ```bash
-python xcontest_scorer.py path/to/flight.igc
+python scorer.py path/to/flight.igc
 ```
 
 Output will include:
@@ -124,7 +124,7 @@ config_xc = {
 - Logging
 
 ## License
-[MIT License](LICENSE)
+[GNU License](LICENSE)
 
 ## Contributing
 Contributions are welcome! Please feel free to submit a Pull Request.
