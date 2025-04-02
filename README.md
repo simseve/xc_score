@@ -1,4 +1,4 @@
-# XContestScorer
+# PG/HG XC Flight Scorer (XContest like)
 
 ## Overview
 XContestScorer is a Python library for scoring paragliding flights according to XContest rules. It analyzes GPS tracklogs to identify and score different flight types, including triangles (FAI and flat), free distance flights, and out-and-return routes.
