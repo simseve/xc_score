@@ -38,6 +38,9 @@ class XContestScorer:
         self.first_point = self.tracklog[0]
         self.last_point = self.tracklog[-1]
         self.take_off = self.tracklog[takeoff_idx]
+        self.hull_tracklog_indices = None 
+        
+        self.hull_go()
     
     # @property
     # def start_point(self):
@@ -46,6 +49,25 @@ class XContestScorer:
     #     This ensures we always use the current value when accessed.
     #     """
     #     return self.tracklog[self.start_point_idx]
+
+    def hull_go(self, num_subsets=5):   #Run ConvexHull only once is enough.
+        """
+        Calculate the convex hull of the tracklog points.
+        """
+        points = np.array([[p.lat, p.lon] for p in self.tracklog])
+        total_points = len(points)
+        subset_size = max(10, total_points // num_subsets)     # truck is divided by num_subsets to get more point
+        
+        hull_indices = set()
+        
+        for i in range(0, total_points, subset_size):
+            subset = points[i:i + subset_size]
+            if len(subset) > 2:  
+                hull = ConvexHull(subset)
+                for idx in hull.vertices:
+                    hull_indices.add(i + idx)  
+        
+        self.hull_tracklog_indices = sorted(hull_indices)
     
     def _convert_df_to_tracklog(self, df):
         """
@@ -325,16 +347,8 @@ class XContestScorer:
         if len(self.tracklog) < 50:
             return [self._empty_score(t) for t in ['closedFAI', 'FAI', 'closedFlat', 'flat']]
         
-        # Calculate the convex hull once  #VIT IL FAMOSO CONVEX HULL #############
-        points = np.array([[p.lat, p.lon] for p in self.tracklog])
-        # print (points)
-        hull = ConvexHull(points)
-        hull_indices = hull.vertices
-        
         # Map hull indices to tracklog indices once
-        hull_tracklog_indices = [i for i in range(len(self.tracklog)) 
-                                if any(np.all(points[i] == points[hull_indices[j]]) 
-                                    for j in range(len(hull_indices)))]
+        hull_tracklog_indices = self.hull_tracklog_indices
         
         # Initialize best scores for each triangle type
         best_scores = {
@@ -356,15 +370,15 @@ class XContestScorer:
         After that, it should determine the XC start and end points.
         """        
         #######################################################################################################################
-        # Initialize variables before the loop to ensure they always exist
         max_perimeter = 0
-        max_perimeter_triangle_indices = None
+        max_perimeter_triangle = None
         max_constrained_perimeter = 0
-        max_constrained_perimeter_triangle_indices = None
+        max_constrained_perimeter_triangle = None
+        max_constrained_perimeter_triangle_indices = None  
+        
+        for tp_indices in itertools.combinations(hull_tracklog_indices, 3):        
 
-        for tp_indices in itertools.combinations(hull_tracklog_indices, 3):
-            tp1_idx, tp2_idx, tp3_idx = tp_indices
-            
+            tp1_idx, tp2_idx, tp3_idx = tp_indices            
             # Ensure chronological order
             if not (tp1_idx < tp2_idx < tp3_idx):
                 continue
@@ -382,31 +396,98 @@ class XContestScorer:
             # Find the longest and shortest sides
             shortest_leg = min(leg1, leg2, leg3)
             longest_leg = max(leg1, leg2, leg3)
-            
-            # print(shortest_leg/perimeter)
-            
+                                
             # Check for triangle with max perimeter
             if perimeter > max_perimeter:
                 max_perimeter = perimeter
                 max_perimeter_triangle_indices = tp_indices
+                shortest_leg_max_perimeter = shortest_leg
                 #print(max_perimeter)
                 #print(tp_indices)
             
-            # Check for triangle with max perimeter where shortest side is at least 28% of perimeter
+            # Check for triangle with max perimeter where shortest side is at least 8% of longest side
             if shortest_leg > 0.28 * perimeter and perimeter > max_constrained_perimeter:
                 max_constrained_perimeter = perimeter
                 max_constrained_perimeter_triangle_indices = tp_indices 
+        
+        
+        # checking if is possible to find a better FAI triangle inside the flat triangle *see documentation to understand how i got 0.24
+        if (shortest_leg_max_perimeter/max_perimeter > 0.23):
+                #print("checking for inside FAI")
+                # Number of neighboring indices to consider (before and after the common vertex)
+                num_neighbors = 7200  # Change this value as needed
+                step = 1  # Change this value for a different step size
 
+                # Extract the indices of the vertices of the maximum perimeter triangle
+                tp1_idx, tp2_idx, tp3_idx = max_perimeter_triangle_indices
+                
+                # Compute the lengths of the triangle sides
+                legs = {
+                    (tp1_idx, tp2_idx): self.calculate_distance(self.tracklog[tp1_idx].lat, self.tracklog[tp1_idx].lon, 
+                                                                self.tracklog[tp2_idx].lat, self.tracklog[tp2_idx].lon),
+                    (tp2_idx, tp3_idx): self.calculate_distance(self.tracklog[tp2_idx].lat, self.tracklog[tp2_idx].lon, 
+                                                                self.tracklog[tp3_idx].lat, self.tracklog[tp3_idx].lon),
+                    (tp3_idx, tp1_idx): self.calculate_distance(self.tracklog[tp3_idx].lat, self.tracklog[tp3_idx].lon, 
+                                                                self.tracklog[tp1_idx].lat, self.tracklog[tp1_idx].lon)
+                }
+
+                # Identify the two longest sides
+                sorted_legs = sorted(legs.items(), key=lambda x: x[1], reverse=True)
+                (longest_1, longest_2) = sorted_legs[:2]
+
+                # The common vertex where the two longest sides meet
+                common_vertex_idx = set(longest_1[0]) & set(longest_2[0])
+                common_vertex_idx = list(common_vertex_idx)[0]  # Convert to integer
+                
+                # Identifica i due vertici che non sono il common vertex
+                remaining_vertices = [idx for idx in max_perimeter_triangle_indices if idx != common_vertex_idx]
+              
+                # Find the neighboring indices around the common vertex with the given step size
+                neighboring_indices_1 = [i for i in range(max(0, common_vertex_idx - num_neighbors * step), 
+                                     min(len(self.tracklog), common_vertex_idx + (num_neighbors + 1) * step), 
+                                     step)]
+                neighboring_indices_2 = [i for i in range(max(0, int(remaining_vertices[0] - num_neighbors / num_neighbors * step)), 
+                                         min(len(self.tracklog), int(remaining_vertices[0] + (num_neighbors /num_neighbors + 1) * step)), 
+                                         step)]
+                neighboring_indices_3 = [i for i in range(max(0, int(remaining_vertices[1] - num_neighbors / num_neighbors * step)), 
+                                         min(len(self.tracklog), int(remaining_vertices[1] + (num_neighbors /num_neighbors + 1) * step)), 
+                                         step)]
+                
+                # Generate combinations with the neighboring indices
+                for tp_indices_1 in neighboring_indices_1:
+                    for tp_indices_2 in neighboring_indices_2:
+                        for tp_indices_3 in neighboring_indices_3:
+                    
+                            tp1_idx, tp2_idx, tp3_idx = tp_indices_1, tp_indices_2, tp_indices_3
+                            
+                            tp1_idx, tp2_idx, tp3_idx = sorted([tp1_idx, tp2_idx, tp3_idx])
+                                
+                            tp1, tp2, tp3 = self.tracklog[tp1_idx], self.tracklog[tp2_idx], self.tracklog[tp3_idx]
+                            
+                            # Calculate the sides of the triangle once
+                            leg1 = self.calculate_distance(tp1.lat, tp1.lon, tp2.lat, tp2.lon)
+                            leg2 = self.calculate_distance(tp2.lat, tp2.lon, tp3.lat, tp3.lon)
+                            leg3 = self.calculate_distance(tp3.lat, tp3.lon, tp1.lat, tp1.lon)
+                            
+                            # Calculate perimeter
+                            perimeter = leg1 + leg2 + leg3
+                                               
+                            # Find the longest and shortest sides
+                            shortest_leg = min(leg1, leg2, leg3)
+                            longest_leg = max(leg1, leg2, leg3)                                      
+           
+                            # Check for triangle with max perimeter where shortest side is at least 8% of longest side
+                            if shortest_leg > 0.28 * perimeter and perimeter > max_constrained_perimeter:
+                                max_constrained_perimeter = perimeter
+                                max_constrained_perimeter_triangle_indices = tp1_idx, tp2_idx, tp3_idx
+           
         # Now, create best_triangle_indices dictionary with proper error checking
         best_triangle_indices = {}
         if max_perimeter_triangle_indices is not None:
             best_triangle_indices['max_perimeter'] = max_perimeter_triangle_indices
         if max_constrained_perimeter_triangle_indices is not None:
             best_triangle_indices['constrained_max_perimeter'] = max_constrained_perimeter_triangle_indices
-        
-        # print(best_triangle_indices)
-        #######################################################################################################################
-        
+                         
         
         
         # Check all possible combinations of 3 turnpoints from the convex hull
@@ -556,15 +637,8 @@ class XContestScorer:
             }
             
         
-        # Calculate the convex hull
-        points = np.array([[p.lat, p.lon] for p in self.tracklog])
-        hull = ConvexHull(points)
-        hull_indices = hull.vertices
-        
-        # Map hull indices to tracklog indices
-        hull_tracklog_indices = [i for i in range(len(self.tracklog)) 
-                                if any(np.all(points[i] == points[hull_indices[j]]) 
-                                    for j in range(len(hull_indices)))]
+        # Map hull indices to tracklog indices once
+        hull_tracklog_indices = self.hull_tracklog_indices
         
         # Add a minimum distance from start/finish to ensure we don't select points too close
         min_end_dist = 5
@@ -577,7 +651,7 @@ class XContestScorer:
         
         multiplier = scoring_rules.get('freeFlight', {}).get('multiplier', 1.0)
         
-        for tp_indices in itertools.combinations(hull_tracklog_indices, 3):
+        for tp_indices in itertools.combinations(hull_tracklog_indices, 3):            
             tp1_idx, tp2_idx, tp3_idx = tp_indices
             tp1, tp2, tp3 = self.tracklog[tp1_idx], self.tracklog[tp2_idx], self.tracklog[tp3_idx]
             
@@ -591,12 +665,19 @@ class XContestScorer:
             tp3_to_finish = self.calculate_distance(tp3.lat, tp3.lon, self.last_point.lat, self.last_point.lon)
             
             total_distance = start_to_tp1 + leg1 + leg2 + tp3_to_finish
-            score = total_distance * multiplier
-            
+            score = total_distance * multiplier            
+           
             if score > best_score:
                 best_score = score
+                bestleg1 = leg1
+                bestleg2 = leg2
+                best_tp1_idx = tp1_idx
+                best_tp3_idx = tp3_idx
+                besttp1 = tp1
+                besttp3 = tp3
                 best_indices = tp_indices
                 best_distance = total_distance
+                
         
         # If no valid combination was found with the convex hull points,
         # we could fall back to the original grid-based method
@@ -628,8 +709,31 @@ class XContestScorer:
                 
                 if score > best_score:
                     best_score = score
+                    bestleg1 = leg1
+                    bestleg2 = leg2
+                    best_tp1_idx = tp1_idx
+                    best_tp3_idx = tp3_idx
+                    besttp1 = tp1
+                    besttp3 = tp3                    
                     best_indices = tp_indices
                     best_distance = total_distance
+        
+        
+        #Optimization for stat and end point            
+        start_idx,finish_idx = self._find_best_end_for_free_distance_idx(best_tp1_idx,best_tp3_idx)   
+        finish_point = self.tracklog[finish_idx]         
+        start_point = self.tracklog[start_idx]
+        
+        #Recalcualate the score with the new start and end point
+        start_to_tp1 = self.calculate_distance(start_point.lat, start_point.lon, besttp1.lat, besttp1.lon)
+        tp3_to_finish = self.calculate_distance(besttp3.lat, besttp3.lon, finish_point.lat, finish_point.lon)
+        
+        total_distance = start_to_tp1 + bestleg1 + bestleg2 + tp3_to_finish
+        score = total_distance * multiplier
+        
+        best_score = score        
+        best_distance = total_distance
+        
         
         # If still no valid combination was found
         if not best_indices:
@@ -645,6 +749,7 @@ class XContestScorer:
         route_points = [self.first_point.to_dict()] + turnpoints_data + [self.last_point.to_dict()]
         closing_distance = self.calculate_distance(self.first_point.lat, self.first_point.lon, self.last_point.lat, self.last_point.lon)
         
+
         return {
             'score': best_score,
             'turnpoints': list(best_indices),
@@ -720,7 +825,67 @@ class XContestScorer:
                 'furthest_point': furthest_point.to_dict()
         }
     
-    ##################### VIT ############################################
+    def _find_best_end_for_free_distance_idx(self, tp1_idx: int, tp3_idx: int) -> tuple[int, int]:
+        """
+        Find the indices of:
+        1. The point in tracklog[:tp1_idx] that is farthest from tp1
+        2. The point in tracklog[tp3_idx:] that is farthest from tp3
+        
+        Uses spatial indexing with KD-Tree for efficient distance calculations.
+        
+        Args:
+            tp1_idx: Index of the tp1 point
+            tp3_idx: Index of the tp3 point
+            
+        Returns:
+            tuple: (idx_farthest_from_tp1, idx_farthest_from_tp3)
+        """
+        # Extract the reference points
+        tp1_point = self.tracklog[tp1_idx]
+        tp3_point = self.tracklog[tp3_idx]
+        
+        # Define the subsets
+        subset_start = self.tracklog[:tp1_idx]
+        subset_end = self.tracklog[tp3_idx:]
+        
+        # Initialize default values in case subsets are empty
+        idx_farthest_from_tp1 = 0
+        idx_farthest_from_tp3 = tp3_idx
+        
+        # Process the start subset if not empty
+        if subset_start:
+            # Convert geographic coordinates to radians
+            points_rad = np.radians(np.array([(point.lat, point.lon) for point in subset_start]))
+            tp1_rad = np.radians([tp1_point.lat, tp1_point.lon])
+            
+            # Create KD-tree for the start subset
+            tree_start = KDTree(points_rad)
+            
+            # Find the point with maximum distance (query with largest k and take the last one)
+            distances, indices = tree_start.query(tp1_rad, k=len(subset_start))
+            
+            # The farthest point is the last one in the sorted distances
+            idx_farthest_from_tp1 = indices[-1]
+        
+        # Process the end subset if not empty
+        if subset_end:
+            # Convert geographic coordinates to radians
+            points_rad = np.radians(np.array([(point.lat, point.lon) for point in subset_end]))
+            tp3_rad = np.radians([tp3_point.lat, tp3_point.lon])
+            
+            # Create KD-tree for the end subset
+            tree_end = KDTree(points_rad)
+            
+            # Find the point with maximum distance
+            distances, indices = tree_end.query(tp3_rad, k=len(subset_end))
+            
+            # The farthest point is the last one in the sorted distances
+            farthest_relative_idx = indices[-1]
+            
+            # Convert back to original index
+            idx_farthest_from_tp3 = farthest_relative_idx + tp3_idx
+        
+        return idx_farthest_from_tp1, idx_farthest_from_tp3
     
     def _find_start_idx_finish_idx(self, tp1_idx: int, tp3_idx: int) -> tuple:
         """
