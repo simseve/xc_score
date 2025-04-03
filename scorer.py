@@ -39,8 +39,8 @@ class XContestScorer:
         self.last_point = self.tracklog[-1]
         self.take_off = self.tracklog[takeoff_idx]
         self.hull_tracklog_indices = None 
-        
-        self.hull_go()
+        number_of_track_segments = self.compute_curvature_simple()  #The track is divided into multiple segments depending on its curvature.A straight line results in many segments, while a closed flight forms a single segment.This makes the hull calculation more precise.
+        self.hull_go(number_of_track_segments)
     
     # @property
     # def start_point(self):
@@ -49,7 +49,38 @@ class XContestScorer:
     #     This ensures we always use the current value when accessed.
     #     """
     #     return self.tracklog[self.start_point_idx]
+    
+    
+    def compute_curvature_simple(self):
+        """Estimates the curvature of the track and returns a value from 1 (high curvature) to 10 (almost straight)."""
+        points = np.array([[p.lat, p.lon] for p in self.tracklog])
 
+        if len(points) < 3:
+            return 0  # Not enough points to evaluate curvature
+
+        total_distance = np.sum(np.linalg.norm(np.diff(points, axis=0), axis=1))  # Sum of segment lengths
+        start_to_end_distance = np.linalg.norm(points[-1] - points[0])  # Direct distance from start to end
+
+        if start_to_end_distance == 0:
+            return 1  # Maximum curvature (completely looped track)
+
+        ratio = total_distance / start_to_end_distance  # Curvature indicator
+        
+        # Map ratio to a scale from 1 to 10
+        if ratio <= 1:
+            return 10  # Almost straight
+        elif ratio >= 4:
+            return 1  # Very curved
+        else:
+            return round(10 - (ratio - 1) * 3)  # Linearly interpolate intermediate values
+
+    def analyze_track(self):
+        """Prints the curvature level and runs the ConvexHull process accordingly."""
+        curvature_level = self.compute_curvature_simple()
+        print(f"Curvature Level: {curvature_level}")
+        self.hull_go(curvature_level)
+        
+    
     def hull_go(self, num_subsets=5):   #Run ConvexHull only once is enough.
         """
         Calculate the convex hull of the tracklog points.
@@ -63,7 +94,7 @@ class XContestScorer:
         for i in range(0, total_points, subset_size):
             subset = points[i:i + subset_size]
             if len(subset) > 2:  
-                hull = ConvexHull(subset)
+                hull = ConvexHull(subset, qhull_options="QJ")  
                 for idx in hull.vertices:
                     hull_indices.add(i + idx)  
         
@@ -616,7 +647,7 @@ class XContestScorer:
         results = []
         for triangle_type, best_score_data in best_scores.items():
             if best_score_data['data']:
-                results.append(best_score_data['data'])
+                results.append(best_score_data['data'])                
             else:
                 results.append(self._empty_score(triangle_type))
         
@@ -1217,11 +1248,11 @@ if __name__ == "__main__":
         end_time = time.time()
         execution_time = end_time - start_time
         print(f"Execution Time: {execution_time:.4f} seconds")
-        print(f"Best flight type: {result['type']}")
+        print(f"Best flight type: {result['type']}")        
         print(f"Score: {result['score']:.2f} points")
         
-        if 'distance' in result['properties']:
-            print(f"Distance: {result['properties']['distance']:.2f} km")
+        if 'total_distance' in result['properties']:
+            print(f"Distance: {result['properties']['total_distance']:.2f} km")
             
         print(f"Multiplier: {result['properties']['multiplier']}")
         
