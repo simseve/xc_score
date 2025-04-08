@@ -16,6 +16,7 @@ XContestScorer is a Python library for scoring paragliding flights according to 
 - **Maximum Distance Calculation**: Identifies the maximum distance between any two points in the tracklog
 - **IGC File Support**: Built-in parser for standard IGC (International Gliding Commission) flight log files
 - **DataFrame Support**: Can work with pandas DataFrames containing tracklog data
+- **Final Optimization**: optimization.py This algorithm refines an initial set of turnpoints to maximize cross-country flight distance. It iteratively adjusts each point within a local radius to find the optimal triangle or open distance route.
 
 ## Installation
 ```bash

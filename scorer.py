@@ -7,6 +7,7 @@ from scipy.spatial import ConvexHull
 from scipy.spatial import KDTree
 import logging 
 import time
+import optimization
 
 
 logger = logging.getLogger(__name__)
@@ -142,12 +143,14 @@ class XContestScorer:
         process_start_time = datetime.datetime.now()    
         logger.info(f"Start processing at {process_start_time}")
 
+        DISABLE_OPTIMIZATION = True  
+
         # Disable out and return scoring for now
         DISABLE_OUT_RETURN = False
         
         # Score all triangle types in a single pass
         triangle_scores = self.score_all_triangle_types()
-        
+                
         # Score as free distance flight
         free_score = self.score_free_distance_flight(self.scoring_rules)
 
@@ -176,6 +179,9 @@ class XContestScorer:
 
         process_end_time = datetime.datetime.now()
         logger.info(f"End processing at {process_end_time}, total time: {process_end_time - process_start_time}")
+        
+        if not DISABLE_OPTIMIZATION:
+            best_score_info = optimization.optimize_track(self.tracklog, best_score_info)
         
         return best_score_info
     
@@ -487,7 +493,7 @@ class XContestScorer:
                 # Generate combinations with the neighboring indices
                 for tp_indices_1 in neighboring_indices_1:
                     for tp_indices_2 in neighboring_indices_2:
-                        for tp_indices_3 in neighboring_indices_3:
+                        for tp_indices_3 in neighboring_indices_3:   #Attempting to find a better point is useful, but in the end, optimization at the final stage is better
                     
                             tp1_idx, tp2_idx, tp3_idx = tp_indices_1, tp_indices_2, tp_indices_3
                             
@@ -575,7 +581,7 @@ class XContestScorer:
             # Common triangle data
             triangle_data = {
                 'turnpoints': tp_indices,
-                'turnpoints_data': [tp1.to_dict(), tp2.to_dict(), tp3.to_dict()],
+                'turnpoints_data': [tp1.to_dict(), tp2.to_dict(), tp3.to_dict()],                
                 'take_off': self.take_off.to_dict(),
                 'first_point': self.first_point.to_dict(),
                 'start_point': start_point.to_dict(),
@@ -598,11 +604,13 @@ class XContestScorer:
                 }
             }
             
+            
             # Check for each triangle type
             for triangle_type, best_score_data in best_scores.items():
                 # Determine if this is a FAI triangle type
                 is_fai = 'FAI' in triangle_type
                 is_closed = 'closed' in triangle_type.lower()
+                
                 
                 # Maximum allowed closing distance ratio
                 max_closing_ratio = 0.05 if is_closed else 0.20
@@ -627,13 +635,14 @@ class XContestScorer:
                         'score': score,
                         'triangle_type': triangle_type,
                         'turnpoints': tp_indices,
+                        'turnpoints_index': [start_idx,tp1_idx,tp2_idx,tp3_idx,finish_idx],
                         'turnpoints_data': triangle_data['turnpoints_data'],
                         'take_off': self.take_off.to_dict(),
                         'first_point': triangle_data['first_point'],
                         'start_point': triangle_data['start_point'],
                         'finish_point': triangle_data['finish_point'],
                         'last_point': triangle_data['last_point'],
-                        'type': 'triangle',
+                        'type': 'triangle',                         
                         'properties': {
                             **triangle_data['properties'],
                             'total_distance': distance,
@@ -779,11 +788,12 @@ class XContestScorer:
         turnpoints_data = [self.tracklog[idx].to_dict() for idx in best_indices]
         route_points = [self.first_point.to_dict()] + turnpoints_data + [self.last_point.to_dict()]
         closing_distance = self.calculate_distance(self.first_point.lat, self.first_point.lon, self.last_point.lat, self.last_point.lon)
-        
+        turnpoints_index = [start_idx] + list(best_indices) + [finish_idx]
 
         return {
             'score': best_score,
             'turnpoints': list(best_indices),
+            'turnpoints_index': turnpoints_index,
             'turnpoints_data': turnpoints_data,
             'take_off': self.take_off.to_dict(),
             'start_point': self.first_point.to_dict(),
@@ -1072,7 +1082,8 @@ class XContestScorer:
         c = 2 * math.asin(math.sqrt(a))
         r = 6371  # Radius of earth in kilometers
         return c * r
-
+        
+    
 
 class IGCParser:
     """Parser for IGC (International Gliding Commission) files"""
@@ -1244,7 +1255,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         file_path = sys.argv[1]
         start_time = time.time()
-        result = process_igc_file(file_path, config_xc["scoring_rules"])
+        result = process_igc_file(file_path, config_xc["scoring_rules"])        
         end_time = time.time()
         execution_time = end_time - start_time
         print(f"Execution Time: {execution_time:.4f} seconds")
