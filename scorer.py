@@ -43,14 +43,7 @@ class XContestScorer:
         number_of_track_segments = self.compute_curvature_simple()  #The track is divided into multiple segments depending on its curvature.A straight line results in many segments, while a closed flight forms a single segment.This makes the hull calculation more precise.
         self.hull_go(number_of_track_segments)
     
-    # @property
-    # def start_point(self):
-    #     """
-    #     Get the start point as a TrackPoint object.
-    #     This ensures we always use the current value when accessed.
-    #     """
-    #     return self.tracklog[self.start_point_idx]
-    
+   
     
     def compute_curvature_simple(self):
         """Estimates the curvature of the track and returns a value from 1 (high curvature) to 10 (almost straight)."""
@@ -135,7 +128,7 @@ class XContestScorer:
         return tracklog
     
 
-    def score_flight(self) -> Dict:
+    def score_flight(self, track_optimization=False) -> Dict:
         """
         Score the flight using the best possible type (triangle or free distance).
         Returns the scoring information for the best flight type, including max distance.
@@ -143,7 +136,7 @@ class XContestScorer:
         process_start_time = datetime.datetime.now()    
         logger.info(f"Start processing at {process_start_time}")
 
-        DISABLE_OPTIMIZATION = True  
+        DISABLE_OPTIMIZATION = not track_optimization
 
         # Disable out and return scoring for now
         DISABLE_OUT_RETURN = False
@@ -185,6 +178,7 @@ class XContestScorer:
         
         return best_score_info
     
+    
 
     def _detect_takeoff_point(self):
         """
@@ -212,9 +206,8 @@ class XContestScorer:
             prev, curr = self.tracklog[i - 1], self.tracklog[i]
 
             distance = self.calculate_distance(prev.lat, prev.lon, curr.lat, curr.lon)
-            #time_diff = (curr.time - prev.time).total_seconds()
             
-            #VIT CORREZIONE TEMPORANEA ##############################
+            #Temporary Correction ##############################
             fake_date = datetime.date.today()
             prev_dt = datetime.datetime.combine(fake_date, prev.time)
             curr_dt = datetime.datetime.combine(fake_date, curr.time)
@@ -1202,7 +1195,7 @@ class IGCParser:
         # Implementation similar to previous code
 
 
-def process_igc_file(file_path: str, scoring_rules: Dict) -> Dict:
+def process_igc_file(file_path: str, scoring_rules: Dict, optimization=False) -> Dict:
     """
     Process an IGC file and find the optimal scoring flight.
     
@@ -1222,14 +1215,14 @@ def process_igc_file(file_path: str, scoring_rules: Dict) -> Dict:
     # ############################################################################
     
     scorer = XContestScorer(tracklog, scoring_rules)
-    best_score = scorer.score_flight()
+    best_score = scorer.score_flight(optimization)
     
     return best_score
-
 
 # Example usage:
 if __name__ == "__main__":
     import sys
+    import argparse
     
     config_xc = {
         # Scoring multipliers for different flight types
@@ -1252,10 +1245,17 @@ if __name__ == "__main__":
         }
     }
     
-    if len(sys.argv) > 1:
-        file_path = sys.argv[1]
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description='Score paragliding flights using XContest rules')
+    parser.add_argument('igc_file', nargs='?', help='Path to the IGC file to analyze')
+    parser.add_argument('--optimization', action='store_true', 
+                        help='Enable track optimization to find the best possible score (increases processing time)')
+    
+    args = parser.parse_args()
+    
+    if args.igc_file:
         start_time = time.time()
-        result = process_igc_file(file_path, config_xc["scoring_rules"])        
+        result = process_igc_file(args.igc_file, config_xc["scoring_rules"], args.optimization)        
         end_time = time.time()
         execution_time = end_time - start_time
         print(f"Execution Time: {execution_time:.4f} seconds")
@@ -1296,4 +1296,4 @@ if __name__ == "__main__":
             for i, tp in enumerate(result['turnpoints_data']):
                 print(f"  TP{i+1}: Lat {tp['lat']:.6f}, Lon {tp['lon']:.6f}")
     else:
-        print("Usage: python xcontest_scorer.py <igc_file_path>")
+        parser.print_help()

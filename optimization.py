@@ -153,7 +153,7 @@ def optimize_track_triangle(tracklog, best_score_info, search_radius=1):
     original_multiplier = best_score_info['properties']['multiplier']
     optimized_info['score'] = best_total_distance * original_multiplier
 
-    plot_track_and_points(tracklog, optimized_info)
+    # plot_track_and_points(tracklog, optimized_info)
     
     return optimized_info
 

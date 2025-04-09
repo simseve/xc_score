@@ -74,7 +74,14 @@ result = scorer.score_flight()
 The script can be run directly from the command line:
 
 ```bash
-python scorer.py path/to/flight.igc
+# Display help and available options
+python scorer.py -h 
+
+# Score a flight using the default algorithm
+python scorer.py path/to/flight.igc 
+
+# Score a flight using the advanced optimization algorithm (better results but slower)
+python scorer.py --optimization path/to/flight.igc 
 ```
 
 Output will include:
