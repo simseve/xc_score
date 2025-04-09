@@ -136,7 +136,7 @@ class XContestScorer:
         process_start_time = datetime.datetime.now()    
         logger.info(f"Start processing at {process_start_time}")
 
-        DISABLE_OPTIMIZATION = not track_optimization
+        # DISABLE_OPTIMIZATION = not track_optimization
 
         # Disable out and return scoring for now
         DISABLE_OUT_RETURN = False
@@ -173,7 +173,7 @@ class XContestScorer:
         process_end_time = datetime.datetime.now()
         logger.info(f"End processing at {process_end_time}, total time: {process_end_time - process_start_time}")
         
-        if not DISABLE_OPTIMIZATION:
+        if track_optimization:
             best_score_info = optimization.optimize_track(self.tracklog, best_score_info)
         
         return best_score_info
