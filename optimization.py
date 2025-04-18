@@ -3,10 +3,6 @@ from scipy.spatial import KDTree
 import numpy as np
 import itertools
 import math
-from geopy.distance import geodesic
-
-
-
 
 
 def calculate_distance_(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
