@@ -307,3 +307,7 @@ Additional algorithm parameters that can be adjusted include:
 Special thanks for outstanding contribution:
 - Vittorio Rena - [@virking72](https://github.com/virking72)
 - Max Ghelfi - [@MaxNero](https://github.com/MaxNero)
+
+## Hike and Fly Scoring System
+
+See implementation example: [https://www.hikeandfly.app/tools/xcscore](https://www.hikeandfly.app/tools/xcscore)
