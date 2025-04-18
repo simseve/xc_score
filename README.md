@@ -300,3 +300,10 @@ Additional algorithm parameters that can be adjusted include:
 - Closed triangle criteria (currently 5%)
 - Takeoff detection parameters
 - Optimization search radius
+
+## Contributors
+- Simone Severini - [@simseve](https://github.com/simseve)
+
+Special thanks for outstanding contribution:
+- Vittorio Rena - [@virking72](https://github.com/virking72)
+- Max Ghelfi - [@MaxNero](https://github.com/MaxNero)
